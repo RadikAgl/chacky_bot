@@ -6,6 +6,7 @@ from telepot.namedtuple import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.models import TelegramUser, Game
 from djbot.settings import BOT_TOKEN
 
+# telepot.api.set_proxy('http://proxy.server:3128')
 tg_bot = telepot.Bot(BOT_TOKEN)
 
 prev_msg = {}
@@ -14,7 +15,7 @@ messages_for_delete = {}
 
 def display_help() -> str:
     """Возвращает текст справки по командам бота"""
-    return ('Вас приветствует **ChackyBot!**\n'
+    return ('Вас приветствует ChackyBot!\n'
             'Я могу выполнить следующие команды:\n'
             '/help - справка по командам\n'
             '/mycard - карточка пользователя\n'
@@ -43,7 +44,7 @@ def games_keyboard(prefix: str, width: int = 3) -> InlineKeyboardMarkup:
 def add_user(msg: dict) -> None:
     """Добавляет текущего пользователя в базу данных"""
     chat_id = msg['chat']['id']
-    nickname = msg['from']['username']
+    nickname = msg['chat'].get('username')
     user, created = TelegramUser.objects.get_or_create(chat_id=chat_id)
     if nickname:
         user.nickname = nickname
@@ -64,6 +65,12 @@ def get_current_player_card(chat_id: int) -> str:
     return user.get_card()
 
 
+def get_nickname(chat_id: int) -> str:
+    """Возвращает ник пользователя по идентификатору чата"""
+    user = TelegramUser.objects.get(chat_id=chat_id)
+    return user.nickname
+
+
 def get_random_player(chat_id: int, name: str) -> TelegramUser:
     """Возвращает случайного пользователя по любимой игре"""
     users = TelegramUser.objects.filter(game__name=name).exclude(chat_id=chat_id).exclude(nickname__isnull=True)
@@ -73,7 +80,7 @@ def get_random_player(chat_id: int, name: str) -> TelegramUser:
 
 def sent_invitation(nickname: str, opponent_id: int, game: str) -> None:
     """Отправляет приглашение пользователю"""
-    message = f'Игрок @{nickname} приглашает тебя на игру "{game}"'
+    message = f'Игрок @{nickname} приглашает тебя на игру "{game}". Напиши ему.'
     tg_bot.sendMessage(opponent_id, message)
 
 
@@ -84,7 +91,7 @@ def has_access(msg: dict) -> bool:
     if user.has_nickname():
         return True
     else:
-        nickname = msg['from']['username']
+        nickname = msg['chat'].get('username')
         if nickname:
             user.nickname = nickname
             user.save()
@@ -117,8 +124,8 @@ def message_handler(msg: dict) -> None:
     chat_id = msg['chat']['id']
     text = msg['text']
 
-    if messages_for_delete.get('chat_id'):
-        tg_bot.deleteMessage(messages_for_delete.pop('chat_id'))
+    if messages_for_delete.get(chat_id):
+        tg_bot.deleteMessage(messages_for_delete.pop(chat_id))
 
     if text == '/start':
         add_user(msg)
@@ -152,7 +159,7 @@ def message_handler(msg: dict) -> None:
         message = 'Я тебя не понимаю. Посмотри, что я умею в /help'
     msg = tg_bot.sendMessage(chat_id, message, reply_markup=keyboard)
     if keyboard:
-        messages_for_delete['chat_id'] = telepot.message_identifier(msg)
+        messages_for_delete[chat_id] = telepot.message_identifier(msg)
 
 
 def callback_handler(msg: dict) -> None:
@@ -162,8 +169,8 @@ def callback_handler(msg: dict) -> None:
     message = 'Я вас не понимаю. Посмотри, что я умею в /help'
     keyboard = None
 
-    if messages_for_delete.get('chat_id'):
-        tg_bot.deleteMessage(messages_for_delete.pop('chat_id'))
+    if messages_for_delete.get(chat_id):
+        tg_bot.deleteMessage(messages_for_delete.pop(chat_id))
 
     callback_data = msg['data']
     if callback_data.startswith('mygame'):
@@ -190,7 +197,7 @@ def callback_handler(msg: dict) -> None:
     elif callback_data.startswith('sent'):
         opponent_chat_id = int(callback_data.split('_')[1])
         game = callback_data.split('_')[2]
-        cur_user_nickname = msg['message']['chat']['username']
+        cur_user_nickname = get_nickname(chat_id)
         sent_invitation(cur_user_nickname, opponent_chat_id, game)
         message = 'Приглашение отправлено'
 
@@ -204,7 +211,7 @@ def callback_handler(msg: dict) -> None:
         message = 'Выбери любимую игру'
         keyboard = games_keyboard(prefix)
 
-    msg = tg_bot.sendMessage(chat_id, message, reply_markup=keyboard, parse_mode='markdown')
+    msg = tg_bot.sendMessage(chat_id, message, reply_markup=keyboard)
 
     if keyboard:
-        messages_for_delete['chat_id'] = telepot.message_identifier(msg)
+        messages_for_delete[chat_id] = telepot.message_identifier(msg)

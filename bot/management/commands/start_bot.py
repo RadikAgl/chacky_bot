@@ -3,10 +3,9 @@ import time
 import requests
 from django.core.management import BaseCommand
 
-from bot.bot_utils import tg_bot
-
 from telepot.loop import MessageLoop
 
+from bot.bot_utils import tg_bot
 from djbot.settings import BOT_TOKEN, HOST
 
 URL = f'{HOST}/chacky/bot/{BOT_TOKEN}/'
